@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+
+    * { 
+      margin: 0; padding: 0;
+      overflow: hidden;
+    }
+    
+    body { 
+      background-color: rgb(25,25,25); overflow: hidden;
+    }
+
+    #processing {outline: none; }
+
+  </style>
+  <script src="/lib/vectors.js"></script>
+  <script src="/lib/three.min.js"></script>
+  <script src="/lib/TrackballControls.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+
+  <title>Game</title>
+  </head>
+<body>
+<script>
+    var imu = {}
+    imu.timelast = Date.now();
+    imu.raw = {};
+    imu.axisx = new Vector({x:1})
+    imu.axisy = new Vector({y:1})
+    imu.axisz = new Vector({z:1})
+    imu.rotf = new Vector({y:-1})
+    imu.rotu = new Vector({z:-1})
+    imu.rotr = new Vector({x:1})
+    imu.accl = new Vector();
+    imu.down = new Vector({x:-1})
+
+    imu.acclaxisx = new Vector({x:1})
+    imu.acclaxisy = new Vector({y:1})
+    imu.acclaxisz = new Vector({z:1})
+
+    var world = {}
+    world.down = new Vector({x:-1})
+    world.axisx = new Vector({x:1})
+    world.axisy = new Vector({y:1})
+    world.axisz = new Vector({z:1})
+
+    var socket = io.connect('http://localhost');
+      socket.on('ardu', function (data) {
+        imu.raw = data.serial;
+        imu.update();
+      });
+
+    imu.update = function () {
+        
+
+        var now = Date.now();
+        imu.timedelta = (now - imu.timelast)/1000;
+        imu.timelast = now;
+        imu.gyro = new Vector({x: imu.raw.gx, y: imu.raw.gy, z: imu.raw.gz})
+        imu.accl = new Vector({x: -imu.raw.ax, y: -imu.raw.ay, z: -imu.raw.az})
+        imu.magn = new Vector({x: imu.raw.mx, y: imu.raw.my, z: imu.raw.mz})
+
+        imu.accl.normalize();
+
+        var scale = (2*Math.PI) / (Math.pow(2,16)/2) * imu.timedelta
+        imu.axisz.rotate(imu.axisy, imu.gyro.y*scale  )
+        imu.axisx.rotate(imu.axisy, imu.gyro.y*scale  )
+
+        imu.axisy.rotate(imu.axisz, imu.gyro.z*scale  )
+        imu.axisx.rotate(imu.axisz, imu.gyro.z*scale  )
+
+        imu.axisz.rotate(imu.axisx, imu.gyro.x*scale  )
+        imu.axisy.rotate(imu.axisx, imu.gyro.x*scale  )
+     
+      
+        //align accel to axis
+        /*
+
+
+        var dz = imu.axisz.angle(imu.acclaxisz)
+        var dzc = new Vector(imu.axisz)
+        dzc.cross(imu.acclaxisz)
+        dzc.normalize()
+        imu.acclaxisz.rotate(dzc, dz)
+        imu.acclaxisy.rotate(dzc, dz)
+        imu.acclaxisx.rotate(dzc, dz)
+        imu.accl.rotate(dzc, -dz)
+
+        var dy = imu.axisy.angle(imu.acclaxisy)
+        var dyc = new Vector(imu.axisy)
+        dyc.cross(imu.acclaxisy)
+        dyc.normalize()
+        imu.acclaxisz.rotate(dyc, dy)
+        imu.acclaxisy.rotate(dyc, dy)
+        imu.acclaxisx.rotate(dyc, dy)
+        imu.accl.rotate(dyc, -dy)
+    */
+
+  
+  var forwardtest = new Vector({x:1})
+  var uptest = new Vector({y:1})
+  var righttest = new Vector({z:1})
+
+  //THIS SHOULD SNAP TO ORIENTATION
+  var fdiff = imu.axisx.angle(forwardtest);  
+  var fcross = new Vector(forwardtest)
+
+  fcross.cross(imu.axisx)
+  fcross.normalize();  
+
+ 
+  forwardtest.rotate(fcross, fdiff);
+  uptest.rotate(fcross, fdiff);       //APPLY 1/2
+  righttest.rotate(fcross, fdiff);    //APPLY 1/2
+
+  var udiff = imu.axisy.angle(uptest );               
+  var ucross = new Vector(uptest)
+  ucross.cross(imu.axisy);
+  ucross.normalize();  
+
+  
+  forwardtest.rotate(ucross, udiff);    //APPLY 2/2, NOW ALLIGNED  
+  uptest.rotate(ucross, udiff);    //APPLY 2/2, NOW ALLIGNED  
+  righttest.rotate(ucross, udiff);    //APPLY 2/2, NOW ALLIGNED   
+
+  imu.accl.rotate(fcross, fdiff);      //APPLY 1/2
+  imu.accl.rotate(ucross, udiff);      //APPLY 2/2, NOW ALLIGNED 
+  //rotate(compassvec,  fcross, fdiff);      //APPLY 1/2
+  //rotate(compassvec,  ucross, udiff);      //APPLY 2/2, NOW ALLIGNED   
+
+  /// CORRECT DRIFT USING ANGLE BETWEEN GRAVITY AND ACCELEROMETER VECTOR ATTACHED TO DRONE ORIENTATION
+  //todo instead of hardvalue for gravity, predict momentum vector
+  var gravity = new Vector({z:-1});
+  var gdiff = imu.accl.angle(gravity);  //down drift error angle
+  var gcross = new Vector(imu.accl);
+  gcross.cross(gravity);
+  gcross.normalize()
+
+
+  var accelgain = 1
+  imu.axisx.rotate(gcross, gdiff*accelgain);
+  imu.axisy.rotate(gcross, gdiff*accelgain);  
+  imu.axisz.rotate(gcross, gdiff*accelgain); 
+  imu.accl.rotate(gcross, gdiff*accelgain);  
+  
+  
+  }
+
+    var renderer = new THREE.WebGLRenderer({antialias: true,alpha: true})
+    renderer.setSize( window.innerWidth, window.innerHeight );
+
+    var scene = new THREE.Scene()
+
+    //CAMERA
+
+    var camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 1000 )
+    camera.position.z = 5
+    scene.add(camera)
+
+        var controls = new THREE.TrackballControls( camera );
+        controls.target.set( 0, 0, 0 );
+
+        controls.rotateSpeed = 1.0;
+        controls.zoomSpeed = 1.2;
+        controls.panSpeed = 0.8;
+
+        controls.noZoom = false;
+        controls.noPan = false;
+
+        controls.staticMoving = false;
+        controls.dynamicDampingFactor = 0.15;
+
+        controls.keys = [ 65, 83, 68 ];
+
+        //controls.addEventListener( 'change', render );
+
+    document.body.appendChild( renderer.domElement );           //adds the render output to the document
+
+
+
+    /*
+        RENDER FRAMES AND ANIMATE
+    */
+
+    ////////////////////////////////////////////////////////////////////////
+    animate();     
+
+    function animate() {
+          drawgrid(rgb(55,55,55));
+          controls.update();
+          
+          //world axis
+          //drawvector(world.axisx, rgb(155,0,0))
+          //drawvector(world.axisy, rgb(0,155,0))
+          //drawvector(world.axisz, rgb(0,0,155))
+
+          //imu axis
+          drawvector(imu.axisx, rgb(255,0,0))
+          drawvector(imu.axisy, rgb(0,255,0))
+          drawvector(imu.axisz, rgb(0,0,255))
+    
+
+          drawvector(imu.accl, rgb(25,175,175))
+
+          
+      
+        
+        
+        requestAnimationFrame( animate );         
+        renderer.render( scene, camera );
+
+
+
+            //clear frame
+            var obj, i;
+            for ( i = scene.children.length - 1; i > 0 ; i -- ) {
+                obj = scene.children[ i ];
+                if ( obj !== camera) {
+                    scene.remove(obj);
+                }
+            }
+
+
+    }
+
+
+    /*
+        HELPER FUNCTIONS
+    */
+
+    function drawgrid(c) {        
+        var material = new THREE.MeshBasicMaterial( {color: c, wireframe:true} )    
+        var geometry23 = new THREE.BoxGeometry( 5, 5, 0.001, 2, 2, 2);    
+        var grid = new THREE.Mesh(geometry23, material);
+        grid.position.z = -0.001;
+        scene.add(grid);        
+    }
+
+    function drawline(v1, v2) {
+        //GRID
+        var material = new THREE.MeshBasicMaterial( {color: c, wireframe:true} )    
+        var geometry2 = new THREE.Geometry();
+        geometry2.vertices.push(new THREE.Vector3(v1.x, v1.y, v1.z));
+        geometry2.vertices.push(new THREE.Vector3(v2.x, v2.y, v2.z));            
+        var photonobj = new THREE.Line(geometry2, material);
+        scene.add(photonobj);
+    }
+
+    function drawvector(v, c) {
+        //VECTOR
+        var material = new THREE.MeshBasicMaterial( {color: c, wireframe:true} )    
+        var geometry2 = new THREE.Geometry();
+        geometry2.vertices.push(new THREE.Vector3(0,0,0));
+        geometry2.vertices.push(new THREE.Vector3(v.x, v.y, v.z));            
+        var photonobj = new THREE.Line(geometry2, material);
+        scene.add(photonobj);
+    }
+
+    function rgb(red,green,blue) {
+        var r = Math.round( red  )
+        var g = Math.round( green  )
+        var b = Math.round( blue  )
+        return "rgb("+r+","+g+","+b+")"
+    }
+
+</script>
+</body>
+</html>

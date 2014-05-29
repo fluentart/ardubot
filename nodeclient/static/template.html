@@ -1,0 +1,35 @@
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>1 template</title>
+          <script src="processing.min.js"></script>
+          <style>
+            #processing { width: 500px; height: 500px; }
+          </style>
+      </head>
+      <body>
+        <canvas id="processing"></canvas>
+        <script>
+
+          var hello = function (pr) 
+          {
+
+            pr.setup = function() 
+            {	
+              pr.size( 500, 500 );
+            }
+
+            pr.draw = function() 
+            {  	
+              pr.background(45)
+              pr.stroke(255,255,0)
+              pr.line(250,50,pr.mouseX,pr.mouseY)
+            }
+            
+          }
+
+          var canvas = document.getElementById("processing");
+          var processingInstance = new Processing(canvas, hello);
+        </script>
+      </body>
+    </html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>processing</title>
+      <style>
+        body { margin: 0; padding: 0;}
+        #processing { width: 500px; height: 500px; }
+      </style>
+      <script src="processing.min.js"></script>
+      <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <canvas id="processing"></canvas>
+
+    <script>
+
+    var light = 0;
+
+    var socket = io.connect('http://localhost');
+      socket.on('ardu', function (data) {
+        console.log(data);
+        if (data.serial)
+            {
+                if (data.serial.light) {
+                    light = data.serial.light
+
+                }
+                
+            }
+        //socket.emit('my other event', { my: 'data' });
+      });
+
+      ///////////////////////////////////////
+
+      var hello = function (pr) 
+      {
+
+        pr.setup = function() 
+        {   
+          pr.size( 500, 500 );
+        }
+
+        pr.draw = function() 
+        {   
+          var colorFromLight = light/1024 * 255;
+          pr.background(colorFromLight)
+          pr.stroke(255,255,0)
+        }
+        
+      }
+
+
+      var mousedown = function (event) {        
+        var brightness = event.y/window.innerHeight      
+        var message = {"brightness": brightness.toString()}
+        //var message = {"brightness": brightness.toString(), "request":"light"}
+        socket.emit("toArdu", message);
+      }
+
+      document.addEventListener( 'mousedown', mousedown, false );
+
+      var canvas = document.getElementById("processing");
+      var processingInstance = new Processing(canvas, hello);
+    </script>
+  </body>
+</html>
