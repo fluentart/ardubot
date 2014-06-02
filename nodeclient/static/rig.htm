@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+
+* { 
+margin: 0; padding: 0;
+overflow: hidden;
+}
+
+body { 
+background-color: rgb(25,25,25); overflow: hidden;
+}
+
+#processing {outline: none; }
+
+</style>
+<script src="/lib/vectors.js"></script>
+<script src="/lib/three.min.js"></script>
+<script src="/lib/TrackballControls.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+
+<title>Game</title>
+</head>
+<body>
+<script>
+var raycaster = new THREE.Raycaster();
+var projector = new THREE.Projector();
+var mouse = new THREE.Vector2();
+var mousedown = 0;
+var commandqueue = [];
+
+var options = {}
+options.lineColor = rgb(45,45,45);
+options.selectedLineColor = rgb(255/3,125/3,25/3);
+options.selectedColor = rgb(255,125,25);
+options.boneColor = rgb(25,165,25);
+options.boneConstraintColor = rgb(25,165,165);
+options.boneConstraintScale = 0.1;
+options.circleSegments = 128;
+
+var renderer = new THREE.WebGLRenderer({antialias: true,alpha: true})
+renderer.setSize( window.innerWidth, window.innerHeight );
+var scene = new THREE.Scene()
+var selectable = [];
+//CAMERA
+var camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 1000 );
+camera.position.z = 5;
+scene.add(camera);
+var controls = new THREE.TrackballControls( camera );
+controls.target.set( 0, 0, 0 );
+controls.rotateSpeed = 1.0;
+controls.zoomSpeed = 1.2;
+controls.panSpeed = 0.8;
+controls.noZoom = false;
+controls.noPan = false;
+controls.staticMoving = false;
+controls.dynamicDampingFactor = 0.15;
+controls.keys = [ 65, 83, 68 ];
+
+document.body.appendChild( renderer.domElement );           //adds the render output to the document
+
+
+
+
+
+/*
+RIG
+*/
+var root = new Vector({z:2})
+var hip = new Vector({z:1.5})
+var rootbone = new Bone(root,hip)
+
+var hiplegA = new Vector({x: 0.8, y: 0.8, z: 1.5})
+var hiplegB = new Vector({x: 0.8, y:-0.8, z: 1.5})
+var hiplegC = new Vector({x:-0.8, y:-0.8, z: 1.5})
+var hiplegD = new Vector({x:-0.8, y: 0.8, z: 1.5})
+var hipboneA = new Bone(hiplegA, hip)
+var hipboneB = new Bone(hiplegB, hip)
+var hipboneC = new Bone(hiplegC, hip)
+var hipboneD = new Bone(hiplegD, hip)
+
+var kneelegA = new Vector({x: 1.1, y: 1.1, z: 1.4})
+var kneelegB = new Vector({x: 1.1, y:-1.1, z: 1.4})
+var kneelegC = new Vector({x:-1.1, y:-1.1, z: 1.4})
+var kneelegD = new Vector({x:-1.1, y: 1.1, z: 1.4})
+
+var kneeboneA = new Bone(hiplegA, kneelegA)
+kneeboneA.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({z:1})})
+var kneeboneB = new Bone(hiplegB, kneelegB)
+kneeboneB.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({z:1})})
+var kneeboneC = new Bone(hiplegC, kneelegC)
+kneeboneC.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({z:1})})
+var kneeboneD = new Bone(hiplegD, kneelegD)
+kneeboneD.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({z:1})})
+
+var footlegA = new Vector({x: 1.2, y: 1.2, z: 0.75})
+var footlegB = new Vector({x: 1.2, y:-1.2, z: 0.75})
+var footlegC = new Vector({x:-1.2, y:-1.2, z: 0.75})
+var footlegD = new Vector({x:-1.2, y: 1.2, z: 0.75})
+var legboneA = new Bone(kneelegA, footlegA, kneeboneA )
+legboneA.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:-1})})
+var legboneB = new Bone(kneelegB, footlegB, kneeboneB )
+legboneB.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:1})})
+var legboneC = new Bone(kneelegC, footlegC, kneeboneC )
+legboneC.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:-1})})
+var legboneD = new Bone(kneelegD, footlegD, kneeboneD )
+legboneD.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:1})})
+
+var footA = new Vector({x: 1.2, y: 1.2, z: 0.0})
+var footB = new Vector({x: 1.2, y:-1.2, z: 0.0})
+var footC = new Vector({x:-1.2, y:-1.2, z: 0.0})
+var footD = new Vector({x:-1.2, y: 1.2, z: 0.0})
+var footboneA = new Bone(footlegA, footA, legboneA)
+footboneA.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:-1})})
+footboneA.addConstraint({type: "IK"})
+var footboneB = new Bone(footlegB, footB, legboneB)
+footboneB.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:1})})
+footboneB.addConstraint({type: "IK"})
+var footboneC = new Bone(footlegC, footC, legboneC)
+footboneC.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:-1})})
+footboneC.addConstraint({type: "IK"})
+var footboneD = new Bone(footlegD, footD, legboneD)
+footboneD.addConstraint({type: "rotationConstraint",rotationaxis: new Vector({x:1, y:1})})
+footboneD.addConstraint({type: "IK"})
+
+var rays = []
+
+var drawrig = function () {
+  drawbone(rootbone)  
+  drawbone(hipboneA)
+  drawbone(hipboneB)
+  drawbone(hipboneC)
+  drawbone(hipboneD)
+  drawbone(kneeboneA)
+  drawbone(kneeboneB)
+  drawbone(kneeboneC)
+  drawbone(kneeboneD)
+  drawbone(legboneA)
+  drawbone(legboneB)
+  drawbone(legboneC)
+  drawbone(legboneD)
+  drawbone(footboneA)
+  drawbone(footboneB)
+  drawbone(footboneC)
+  drawbone(footboneD)  
+
+  /*var testp = new Vector()
+  var testax = new Vector({z:1})
+  var testpoint = new Vector({x:1})
+  drawcircle(testp, testax, testpoint)*/
+  
+}
+
+
+
+
+
+/*
+HELPER FUNCTIONS
+*/
+
+var clearframe = function () {
+  //clear frame
+  var obj, i;
+  for ( i = scene.children.length - 1; i > 0 ; i -- ) {
+    obj = scene.children[ i ];
+    if ( obj !== camera) {
+      scene.remove(obj);
+    }
+  }
+}
+
+function drawgrid(c) {        
+var material = new THREE.MeshBasicMaterial( {color: c, wireframe:true} )    
+var geometry23 = new THREE.BoxGeometry( 5, 5, 0.001, 2, 2, 2);    
+var grid = new THREE.Mesh(geometry23, material);
+grid.position.z = -0.001;
+scene.add(grid);        
+}
+
+function drawbone(bone) {
+//DRAW BONE
+ var c = options.boneColor
+if (bone.selected == 1) {
+  c = options.selectedColor
+}
+var material = new THREE.MeshBasicMaterial( {color: c, wireframe:true} )    
+var geometry2 = new THREE.Geometry();
+geometry2.vertices.push(new THREE.Vector3(bone.v1.x, bone.v1.y, bone.v1.z));
+geometry2.vertices.push(new THREE.Vector3(bone.v2.x, bone.v2.y, bone.v2.z));            
+var boneobj = new THREE.Line(geometry2, material);
+boneobj.parentobj = bone
+scene.add(boneobj);
+selectable.push(boneobj)
+  if (bone.rotationaxis) {
+    drawline(bone.v1, bone.v1.Add(bone.rotationaxis.Length(options.boneConstraintScale)), options.boneConstraintColor);    
+    drawline(bone.v1, bone.v1.Minus(bone.rotationaxis.Length(options.boneConstraintScale)), options.boneConstraintColor); 
+    if (bone.selected == 1) {
+      drawcircle(bone.v1, bone.rotationaxis, bone.v2, options.selectedLineColor )  
+    } else {
+      drawcircle(bone.v1, bone.rotationaxis, bone.v2)  
+    }
+    
+  }
+  if (bone.IK == 1) {
+    drawcircle(bone.v2, bone.rotationaxis, bone.v1) 
+  }
+}
+
+function drawline(v1, v2, c) {
+//GRID
+if (c) {} else {c = options.lineColor}
+var material = new THREE.MeshBasicMaterial( {color: c, wireframe:true} )    
+var geometry2 = new THREE.Geometry();
+geometry2.vertices.push(new THREE.Vector3(v1.x, v1.y, v1.z));
+geometry2.vertices.push(new THREE.Vector3(v2.x, v2.y, v2.z));            
+var photonobj = new THREE.Line(geometry2, material);
+scene.add(photonobj);
+}
+
+function drawcircle(centerPosition, axis, radiusPoint, color) {
+//CIRCLE
+var centerV = new Vector(centerPosition);
+var axisV = new Vector(axis);
+axisV.normalize();
+var radiusPointV = new Vector(radiusPoint);
+
+if (color == undefined) {color = options.lineColor}
+var material = new THREE.MeshBasicMaterial( {color: color, wireframe:true} )    
+var geometry2 = new THREE.Geometry();
+
+for (var rad = 0; rad <= options.circleSegments; rad++) {
+  geometry2.vertices.push(new THREE.Vector3(radiusPointV.x, radiusPointV.y, radiusPointV.z));
+  radiusPointV.rotate(axisV, Math.PI*2*(1/options.circleSegments), centerV)
+}
+
+var photonobj = new THREE.Line(geometry2, material);
+scene.add(photonobj);
+}
+
+function drawvector(v, c) {
+//VECTOR
+var material = new THREE.MeshBasicMaterial( {color: c, wireframe:true} )    
+var geometry2 = new THREE.Geometry();
+geometry2.vertices.push(new THREE.Vector3(0,0,0));
+geometry2.vertices.push(new THREE.Vector3(v.x, v.y, v.z));            
+var photonobj = new THREE.Line(geometry2, material);
+scene.add(photonobj);
+}
+
+function rgb(red,green,blue) {
+var r = Math.round( red  )
+var g = Math.round( green  )
+var b = Math.round( blue  )
+return "rgb("+r+","+g+","+b+")"
+}
+
+
+var previousmouse = {}
+previousmouse.x = 0;
+previousmouse.y = 0;
+
+var grabVector = new Vector()
+
+function onDocumentMouseMove( event ) 
+{
+  event.preventDefault();
+  mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+  mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+  if (grabEnabled == 1) 
+  {
+
+    grabVector = new Vector({
+      x:mouse.x - previousmouse.x,
+      y:mouse.y - previousmouse.y,
+    })
+
+    previousmouse.x = mouse.x;
+    previousmouse.y = mouse.y;
+    console.log("grab tool...");
+
+
+
+
+
+  }
+}
+document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+
+
+function onDocumentMouseDown( event ) {
+  event.preventDefault();
+  mousedown = 1;
+  console.log(event)
+  //left click select
+  if (event.button == 0) {
+    commandqueue.push(selectClick)
+  }
+}
+document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+
+
+
+function onDocumentMouseUp( event ) {
+  event.preventDefault();
+  mousedown = 0;
+
+}
+document.addEventListener( 'mouseup', onDocumentMouseUp, false );
+
+function onDocumentKeyDown( event ) {
+  console.log(event)
+  if (event.keyCode == 65) {
+    commandqueue.push(selectAll);
+  }
+  if (event.keyCode == 71) {
+    commandqueue.push(grabTool);
+  }
+}
+document.addEventListener( 'keydown', onDocumentKeyDown, false );
+
+/*
+RENDER FRAMES AND ANIMATE
+*/
+
+function selectClick() {
+  var vector = new THREE.Vector3( mouse.x, mouse.y, 1 );
+  projector.unprojectVector( vector, camera );
+  raycaster.set( camera.position, vector.sub( camera.position ).normalize() );
+  var intersects = raycaster.intersectObjects( selectable );
+  if (intersects.length > 0) { 
+    for (var obj in intersects) {
+
+
+        var v1 = new Vector()
+        v1.x = raycaster.ray.origin.x
+        v1.y = raycaster.ray.origin.y
+        v1.z = raycaster.ray.origin.z
+        var v2 = new Vector()
+        v2.x = raycaster.ray.direction.x
+        v2.y = raycaster.ray.direction.y
+        v2.z = raycaster.ray.direction.z
+
+        var tempV = v1.Add(v2.Length(100))
+        var rayline = new Line({
+          x1:raycaster.ray.origin.x,
+          y1:raycaster.ray.origin.y,
+          z1:raycaster.ray.origin.z,
+          x2:tempV.x,
+          y2:tempV.y,
+          z2:tempV.z,
+        })
+
+        
+        var objLine = intersects[obj].object.parentobj.toLine()        
+        var dist = objLine.nearestLineDistance(rayline)
+
+        if (dist < 0.02) {
+          if (intersects[obj].object.parentobj.selected == 1) {
+            intersects[obj].object.parentobj.selected = 0
+          } else {
+            intersects[obj].object.parentobj.selected = 1
+          } 
+        }
+
+    }
+   }
+
+
+}
+
+function selectAll() {
+  var selected = 0;
+  for (var obj in selectable) {
+    if (selectable[obj].parentobj.selected == 1) {
+      selected += 1;
+    }
+  }
+
+  if (selected == 0) {
+    console.log("select all") 
+    for (var obj in selectable) { selectable[obj].parentobj.selected = 1; } 
+  } else {
+    console.log("select none")
+    for (var obj in selectable) { selectable[obj].parentobj.selected = 0; }      
+  }
+  
+}
+
+var grabEnabled = 0;
+
+function grabTool() {
+  if (grabEnabled == 1) 
+  { 
+    grabEnabled = 0;
+    console.log("grab disabled");
+  } else 
+  { 
+    grabEnabled = 1;
+    previousmouse.x = mouse.x;
+    previousmouse.y = mouse.y;
+    //see mouseMove event
+    console.log("grab enabled");
+  }
+}
+
+function grabMoveSelected() {
+ 
+  if (grabEnabled == 1) 
+  {
+   
+    for (var obj in selectable) 
+    {
+       
+      if (selectable[obj].parentobj.selected == 1) 
+      {
+    
+        if (selectable[obj].parentobj.move) 
+        {
+          selectable[obj].parentobj.move(grabVector);
+        }
+      }
+    }
+  }
+  grabVector = new Vector();
+}
+
+////////////////////////////////////////////////////////////////////////
+animate();     
+
+function animate() {
+  drawgrid(rgb(55,55,55));
+  controls.update();
+
+  selectable = []; //clear on each frame
+  drawrig();
+  //world axis
+  //drawvector(world.axisx, rgb(155,0,0))
+  //drawvector(world.axisy, rgb(0,155,0))
+  //drawvector(world.axisz, rgb(0,0,155))
+
+  for (var task in commandqueue) {
+    commandqueue[task]();
+  }
+  commandqueue = [];
+
+
+  //HOVER HIGHLIGHT
+  var vector = new THREE.Vector3( mouse.x, mouse.y, 1 );
+  projector.unprojectVector( vector, camera );
+  raycaster.set( camera.position, vector.sub( camera.position ).normalize() );
+
+  //raycaster.precision = 1
+  //console.log(raycaster.precision)
+  var intersects = raycaster.intersectObjects( selectable );
+  if (intersects.length > 0) { 
+    //console.log(intersects)
+    for (var obj in intersects) {
+      if (intersects[obj].object.parentobj.selected == 1) {
+
+      } else {
+        
+
+        var v1 = new Vector()
+        v1.x = raycaster.ray.origin.x
+        v1.y = raycaster.ray.origin.y
+        v1.z = raycaster.ray.origin.z
+        var v2 = new Vector()
+        v2.x = raycaster.ray.direction.x
+        v2.y = raycaster.ray.direction.y
+        v2.z = raycaster.ray.direction.z
+
+        var tempV = v1.Add(v2.Length(100))
+        var rayline = new Line({
+          x1:raycaster.ray.origin.x,
+          y1:raycaster.ray.origin.y,
+          z1:raycaster.ray.origin.z,
+          x2:tempV.x,
+          y2:tempV.y,
+          z2:tempV.z,
+        })
+
+        
+        var objLine = intersects[obj].object.parentobj.toLine()        
+        var dist = objLine.nearestLineDistance(rayline)
+  
+        if (dist < 0.02) {
+          intersects[obj].object.material.color.r = 0.75
+          intersects[obj].object.material.color.g = 0.75
+          intersects[obj].object.material.color.b = 0.75    
+        }
+
+        
+      }
+      
+      
+    }
+   }
+  
+  grabMoveSelected()
+  
+  requestAnimationFrame( animate );         
+  renderer.render( scene, camera );
+
+  
+
+  clearframe(); //deletes all objects from the scene except the camera
+}
+
+</script>
+</body>
+</html>

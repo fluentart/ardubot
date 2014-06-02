@@ -62,15 +62,21 @@ var os = require("os");
 var scraper = require('json-scrape')();
 
 
+var arduino;
 //LIST DEVICES
 SerialPort.list( function (err, ports) {
 	for (var num in ports) {
 		console.log(ports[num])
+		if (ports[num].manufacturer.slice[0,5] == "Arduino".slice[0,5]) {
+			console.log("Arduino detected")
+			arduino = new SerialPort.SerialPort(ports[num].comName, {baudrate: 115200});
+			arduConnect(arduino);
+		}
 	}
 });
 
 
-var arduino = new SerialPort.SerialPort('COM10', {baudrate: 115200});
+
 
 var arduConnect = function (connection) {
 	connection.on("data", arduDatahandler);
@@ -100,7 +106,7 @@ scraper.on('data', function (cleandata) {
 
 
 webserver.listen(8000, "127.0.0.1");
-arduConnect(arduino);
+
 
 
 
